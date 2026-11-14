@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>FaceLens – Face &amp; Skin Scan</title>
+<style>
+:root{--bg:#f5f5f7;--card:#fff;--tx:#14141a;--mu:#6b6b78;--ac:#6d4aff;--bd:#e4e4ea;--ok:#12a36b;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);color-scheme:light}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0e0e13;--card:#181820;--tx:#f1f1f6;--mu:#9a9aaa;--ac:#8d73ff;--bd:#2a2a36;--ok:#34d399;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#0e0e13;--card:#181820;--tx:#f1f1f6;--mu:#9a9aaa;--ac:#8d73ff;--bd:#2a2a36;--ok:#34d399;color-scheme:dark}
+*{box-sizing:border-box}html{scroll-padding-top:env(safe-area-inset-top,0px)}
+body{margin:0;background:var(--bg);color:var(--tx);font:15px/1.5 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;padding-bottom:76px}
+main{max-width:560px;margin:0 auto;padding:16px}
+h1{font-size:22px;margin:4px 0 2px}h2{font-size:17px;margin:18px 0 8px}
+.mu{color:var(--mu);font-size:13px}
+.card{background:var(--card);border:1px solid var(--bd);border-radius:16px;padding:14px;margin:10px 0}
+button,.btn{background:var(--ac);color:#fff;border:0;border-radius:12px;padding:11px 16px;font:inherit;font-weight:600;cursor:pointer}
+button.sec{background:transparent;color:var(--tx);border:1px solid var(--bd)}
+.row{display:flex;gap:10px;flex-wrap:wrap}.row>*{flex:1}
+.drop{border:2px dashed var(--bd);border-radius:14px;padding:18px;text-align:center;cursor:pointer;min-height:130px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px}
+.drop img{max-width:100%;max-height:150px;border-radius:10px}
+.big{font-size:52px;font-weight:800;color:var(--ac);line-height:1}
+.bar{height:8px;background:var(--bd);border-radius:6px;overflow:hidden;margin:6px 0 2px}.bar i{display:block;height:100%;background:var(--ac)}
+nav{position:fixed;left:0;right:0;bottom:0;background:var(--card);border-top:1px solid var(--bd);display:flex;padding:6px 4px calc(6px + env(safe-area-inset-bottom,0px));z-index:5}
+nav button{flex:1;background:none;color:var(--mu);font-size:11px;padding:6px 2px;border-radius:8px}nav button.on{color:var(--ac)}
+nav span{display:block;font-size:19px}
+.chat{max-height:46vh;overflow:auto;display:flex;flex-direction:column;gap:8px}
+.m{padding:9px 12px;border-radius:12px;max-width:88%}.m.u{background:var(--ac);color:#fff;align-self:flex-end}.m.a{background:var(--bg);border:1px solid var(--bd)}
+input[type=text]{flex:3;border:1px solid var(--bd);background:var(--bg);color:var(--tx);border-radius:12px;padding:11px;font:inherit}
+label.q{display:flex;gap:10px;align-items:center;padding:8px 0;border-bottom:1px solid var(--bd)}label.q:last-child{border:0}
+.chart{display:flex;align-items:flex-end;gap:6px;height:110px;overflow-x:auto;padding-top:6px}.chart div{min-width:28px;background:var(--ac);border-radius:6px 6px 0 0;color:#fff;font-size:11px;text-align:center}
+</style></head><body><main id="app"></main>
+<nav id="nav"></nav>
+<script>
+var mem={};
+function ld(k,d){try{var v=localStorage.getItem(k);return v?JSON.parse(v):d}catch(e){return mem[k]!==undefined?mem[k]:d}}
+function sv(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(e){mem[k]=v}}
+var tab="scan",front=null,side=null,scans=ld("fl_scans",[]),done=ld("fl_done",{}),chat=[];
+var TABS=[["scan","📷","Scan"],["result","📊","Results"],["routine","🧴","Routine"],["plan","🎯","Plan"],["progress","📈","Progress"],["coach","💬","Coach"]];
+var KEYS=["Harmony","Angularity","Dimorphism","Features","Symmetry","Skin","Side profile"];
+function today(){return new Date().toISOString().slice(0,10)}
+function clamp(x,a,b){return Math.max(a,Math.min(b,x))}
+function band(v,lo,mid,hi){return v>=7.5?hi:v>=6?mid:lo}
+function loadImg(file){return new Promise(function(res,rej){var u=URL.createObjectURL(file),i=new Image();i.onload=function(){res({img:i,url:u})};i.onerror=rej;i.src=u})}
+function gray(img){var c=document.createElement("canvas");c.width=c.height=64;var x=c.getContext("2d"),s=Math.min(img.width,img.height);
+x.drawImage(img,(img.width-s)/2,(img.height-s)/2,s,s,0,0,64,64);var d=x.getImageData(0,0,64,64).data,g=new Float32Array(4096);
+for(var i=0;i<4096;i++)g[i]=.299*d[i*4]+.587*d[i*4+1]+.114*d[i*4+2];return g}
+function analyse(g,hasSide,sg){
+ var sd=0,n=0,noise=0,nn=0,ed=0,en=0,jaw=0,jn=0,mid=0,mn=0,top=0,bot=0,sum=0;
+ for(var y=0;y<64;y++)for(var x=0;x<64;x++){var v=g[y*64+x];sum+=v;
+  if(x<32){sd+=Math.abs(v-g[y*64+63-x]);n++}
+  if(y<32)top+=v;else bot+=v;
+  if(x>0&&y>0){var gx=Math.abs(v-g[y*64+x-1]),gy=Math.abs(v-g[(y-1)*64+x]),m=gx+gy;ed+=m;en++;
+   if(x>16&&x<48&&y>16&&y<48){noise+=m;nn++;mid+=v;mn++}
+   if(y>40&&y<62){jaw+=m;jn++}}}
+ var seed=(Math.round(sum)%7)/10-.3;
+ var sym=clamp(9.4-(sd/n)/255*28,4.5,9.2),clar=clamp(9.5-(noise/nn)*.13,4.5,9.3),ang=clamp(3.5+(jaw/jn)*.17,4.5,9),feat=clamp(3.8+(ed/en)*.16,4.5,9),
+ bal=clamp(9-Math.abs(top-bot)/2048*.5,4.5,9),dim=clamp((ang+feat)/2+seed,4.5,9);
+ var r=function(v){return Math.round(clamp(v+seed*.5,4,9.6)*10)/10};
+ var sp=null;if(hasSide&&sg){var e=0,k=0;for(var i=1;i<4096;i++){e+=Math.abs(sg[i]-sg[i-1]);k++}sp=r(3.6+(e/k)*.14)}
+ return {Harmony:r((sym+bal+feat)/3),Angularity:r(ang),Dimorphism:r(dim),Features:r(feat),Symmetry:r(sym),Skin:r(clar),"Side profile":sp}}
+var WHY={Harmony:["Proportions look a bit uneven in this photo","Fairly balanced overall","Well-balanced proportions"],Angularity:["Soft lower-face definition in this light","Moderate definition","Strong, defined lower face"],Dimorphism:["Softer feature contrast","Balanced feature contrast","Distinct feature contrast"],Features:["Low contrast between features","Clear feature detail","Sharp, clear feature detail"],Symmetry:["Noticeable left–right difference (angle matters)","Mostly symmetric","Very symmetric"],Skin:["Visible texture or uneven tone","Fairly clear, small texture","Clear, even-looking skin"],"Side profile":["Profile looks flat in this shot","Decent profile line","Strong profile line"]};
+function overall(s){var a=KEYS.map(function(k){return s[k]}).filter(function(v){return v!=null});return Math.round(a.reduce(function(x,y){return x+y},0)/a.length*10)/10}
+function last(){return scans[scans.length-1]}
+function verdict(s){var a=KEYS.filter(function(k){return s[k]!=null}).sort(function(x,y){return s[y]-s[x]});return "Strongest: "+a[0]+" ("+s[a[0]]+") and "+a[1]+" ("+s[a[1]]+"). Work on: "+a[a.length-1]+" ("+s[a[a.length-1]]+"). Better light and a straight-on angle can change scores a lot."}
+function xp(){var t=0;for(var d in done)t+=done[d].length*10;return t+scans.length*25}
+function rank(){var x=xp();return x>=600?"Diamond":x>=300?"Platinum":x>=150?"Gold":x>=50?"Silver":"Bronze"}
+function streak(){var s=0,d=new Date();for(;;){var k=d.toISOString().slice(0,10);if(done[k]&&done[k].length>=3){s++;d.setDate(d.getDate()-1)}else if(k===today()){d.setDate(d.getDate()-1)}else break}return s}
+var QUESTS=["Drink 2.5L+ water","Sunscreen SPF 30+ (morning)","Cleanse face (morning & night)","Sleep 7–8 hours","Jaw, neck & posture exercise (5 min)"];
+function nav(){document.getElementById("nav").innerHTML=TABS.map(function(t){return `<button class="${tab===t[0]?"on":""}" onclick="go('${t[0]}')"><span>${t[1]}</span>${t[2]}</button>`}).join("")}
+function go(t){tab=t;render()}
+function pick(which){var i=document.createElement("input");i.type="file";i.accept="image/*";i.onchange=async function(){if(!i.files[0])return;var o=await loadImg(i.files[0]);if(which==="f")front=o;else side=o;render()};i.click()}
+function scan(){if(!front)return;var s=analyse(gray(front.img),!!side,side?gray(side.img):null);var rec={date:today(),scores:s,total:overall(s)};scans.push(rec);sv("fl_scans",scans);tab="result";render()}
+function drop(which,o,label){return `<div class="drop" onclick="pick('${which}')">${o?`<img src="${o.url}" alt="">`:`<div style="font-size:30px">📷</div>`}<div>${label}</div></div>`}
+function render(){nav();var h="",L=last();
+if(tab==="scan"){h=`<h1>FaceLens</h1><div class="mu">Face &amp; skin scan, 100% free. Photos stay on your device.</div>
+<div class="row" style="margin-top:12px">${drop("f",front,front?"Front photo ✓":"Front photo (required)")}${drop("s",side,side?"Side photo ✓":"Side photo (optional)")}</div>
+<p class="mu">Tip: even light, face straight, neutral expression, no filter.</p>
+<button style="width:100%;opacity:${front?1:.5}" onclick="scan()">Scan now</button>
+<div class="card mu">Scores are an on-device estimate from photo statistics (symmetry, edge detail, texture). Lighting and angle change them. This is not medical advice and not a fact about you.</div>`}
+else if(tab==="result"){if(!L)h=empty();else{var s=L.scores;h=`<h1>Your scan</h1><div class="card" style="text-align:center"><div class="big">${L.total}</div><div class="mu">Overall / 10 · ${L.date}</div></div>
+<div class="card"><b>Verdict</b><div>${verdict(s)}</div></div>`+KEYS.map(function(k){var v=s[k];if(v==null)return `<div class="card"><b>${k}</b><div class="mu">Add a side photo in a new scan to get this score.</div></div>`;
+return `<div class="card"><div class="row" style="justify-content:space-between"><b>${k}</b><b>${v}</b></div><div class="bar"><i style="width:${v*10}%"></i></div><div class="mu">${band(v,WHY[k][0],WHY[k][1],WHY[k][2])}</div></div>`}).join("")}}
+else if(tab==="routine"){var sk=L?L.scores.Skin:null;h=`<h1>Skin read &amp; routine</h1>`+(L?`<div class="card"><b>Skin clarity: ${sk}/10</b><div class="mu">${sk<6?"Visible texture or uneven tone detected. Focus on gentle cleansing, moisturiser and sunscreen. Cosmetic read only.":sk<7.5?"Fairly clear. Keep the basics consistent.":"Clear-looking skin. Maintain with sunscreen and hydration."}</div></div>`:"")+
+`<div class="card"><b>Morning</b><div class="mu">1. Gentle cleanser · 2. Moisturiser · 3. Sunscreen SPF 30+</div></div><div class="card"><b>Night</b><div class="mu">1. Cleanser · 2. Light moisturiser${sk&&sk<6?" · 3. A mild exfoliant 2 times a week":""}</div></div><div class="card mu">Persistent acne, pain or changing moles: see a dermatologist. This app does not diagnose.</div>`}
+else if(tab==="plan"){var d=done[today()]||[];h=`<h1>Daily plan</h1><div class="row"><div class="card"><div class="big" style="font-size:30px">${rank()}</div><div class="mu">${xp()} XP</div></div><div class="card"><div class="big" style="font-size:30px">🔥 ${streak()}</div><div class="mu">day streak (3+ quests)</div></div></div>
+<div class="card">`+QUESTS.map(function(q,i){return `<label class="q"><input type="checkbox" ${d.indexOf(i)>-1?"checked":""} onchange="tq(${i})"> ${q}</label>`}).join("")+`</div>`}
+else if(tab==="progress"){h=`<h1>Progress</h1>`;if(!scans.length)h+=empty();else{var p=scans.length>1?(L.total-scans[scans.length-2].total).toFixed(1):null;
+h+=`<div class="card"><div class="chart">`+scans.slice(-12).map(function(s){return `<div style="height:${s.total*10}%">${s.total}</div>`}).join("")+`</div><div class="mu">${scans.length} scan(s)${p!==null?" · change since last: "+(p>0?"+":"")+p:""}</div></div>`+scans.slice().reverse().map(function(s){return `<div class="card row" style="justify-content:space-between"><span>${s.date}</span><b>${s.total}</b></div>`}).join("")}
+h+=`<button class="sec" onclick="wipe()">Delete all my data</button>`}
+else{h=`<h1>Coach</h1><div class="mu">Ask about your scan, routine or plan.</div><div class="card chat" id="ch">`+(chat.length?chat.map(function(m){return `<div class="m ${m.r}">${m.t}</div>`}).join(""):`<div class="mu">Try: "How is my skin?", "What should I improve?", "Give me a routine"</div>`)+`</div><div class="row"><input type="text" id="q" placeholder="Ask something…" onkeydown="if(event.key==='Enter')ask()"><button style="flex:1" onclick="ask()">Send</button></div>`}
+document.getElementById("app").innerHTML=h;var c=document.getElementById("ch");if(c)c.scrollTop=1e9}
+function empty(){return `<div class="card mu">No scan yet. Go to Scan and take a photo.</div>`}
+function tq(i){var d=done[today()]||[],k=d.indexOf(i);if(k>-1)d.splice(k,1);else d.push(i);done[today()]=d;sv("fl_done",done);render()}
+function wipe(){if(confirm("Delete all scans and progress?")){scans=[];done={};chat=[];sv("fl_scans",[]);sv("fl_done",{});render()}}
+function reply(q){q=q.toLowerCase();var L=last();if(!L)return "Do a scan first, then I can answer about your results.";var s=L.scores;
+var low=KEYS.filter(function(k){return s[k]!=null}).sort(function(a,b){return s[a]-s[b]})[0];
+if(/skin|acne|pimple|dark/.test(q))return "Skin clarity is "+s.Skin+"/10. "+(s.Skin<6.5?"Cleanser, moisturiser, SPF daily, enough sleep and water. Rescan in 2 weeks in the same light.":"Looks fine. Keep sunscreen and hydration consistent.")+" Cosmetic only, see a dermatologist for medical concerns.";
+if(/jaw|angul|define/.test(q))return "Angularity is "+s.Angularity+"/10. Lower body-fat, good posture and chewing/neck exercises can help definition. Also check lighting, as top-down light hides the jawline.";
+if(/symm/.test(q))return "Symmetry is "+s.Symmetry+"/10. Small differences are normal. Face the camera straight, keep head level and retake before judging.";
+if(/improve|work|weak|low|better/.test(q))return "Your lowest score is "+low+" ("+s[low]+"). "+band(s[low],WHY[low][0],WHY[low][1],WHY[low][2])+". Start with the Plan tab quests for 7 days, then rescan.";
+if(/routine|skincare|morning|night/.test(q))return "Morning: cleanser, moisturiser, SPF 30+. Night: cleanser, light moisturiser. Full details are in the Routine tab.";
+if(/score|overall|rating/.test(q))return "Overall "+L.total+"/10. "+verdict(s);
+if(/plan|streak|rank|quest/.test(q))return "You are "+rank()+" with "+xp()+" XP and a "+streak()+"-day streak. Finish 3+ quests daily to grow it.";
+return "I can help with skin, jawline, symmetry, your routine, plan or what to improve. Ask me any of those.";}
+function ask(){var i=document.getElementById("q"),t=i.value.trim();if(!t)return;chat.push({r:"u",t:t.replace(/</g,"&lt;")});chat.push({r:"a",t:reply(t)});render()}
+render();
+</script></body></html>
